@@ -1,23 +1,34 @@
 import os
 import requests
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load env variables from .env file
-load_dotenv()
+# Load env variables from absolute path
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+APISPORTS_KEY = os.getenv("APISPORTS_KEY")
 RAPIDAPI_HOST = "api-football-v1.p.rapidapi.com"
-API_BASE_URL = f"https://{RAPIDAPI_HOST}/v3"
+
+def get_base_url():
+    if APISPORTS_KEY:
+        return "https://v3.football.api-sports.io"
+    return f"https://{RAPIDAPI_HOST}/v3"
 
 def get_headers():
+    if APISPORTS_KEY:
+        return {
+            "x-apisports-key": APISPORTS_KEY
+        }
     return {
         "X-RapidAPI-Key": RAPIDAPI_KEY or "",
         "X-RapidAPI-Host": RAPIDAPI_HOST
     }
 
 def is_api_configured() -> bool:
-    """Returns True if the RapidAPI key is set in environment."""
-    return bool(RAPIDAPI_KEY)
+    """Returns True if either the RapidAPI key or API-Sports key is set in environment."""
+    return bool(RAPIDAPI_KEY) or bool(APISPORTS_KEY)
 
 def search_live_players(query: str) -> list[dict]:
     """Searches for players in the API-Football database by name query."""
@@ -25,7 +36,7 @@ def search_live_players(query: str) -> list[dict]:
         # Fallback to local DB matching names
         return []
         
-    url = f"{API_BASE_URL}/players"
+    url = f"{get_base_url()}/players"
     params = {"search": query}
     try:
         response = requests.get(url, headers=get_headers(), params=params, timeout=10)
@@ -66,7 +77,7 @@ def search_live_players(query: str) -> list[dict]:
 
 def fetch_player_season_stats(api_football_id: int, season_year: int) -> dict:
     """Fetches stats for a specific player ID and season year from API-Football."""
-    url = f"{API_BASE_URL}/players"
+    url = f"{get_base_url()}/players"
     params = {
         "id": api_football_id,
         "season": season_year

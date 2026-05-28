@@ -35,10 +35,8 @@ def get_players():
 def search_live(query: str = Query(..., min_length=2)):
     """Searches for players live on API-Football."""
     if not is_api_configured():
-        raise HTTPException(
-            status_code=400,
-            detail="RapidAPI Key is not configured in backend .env file. Please add RAPIDAPI_KEY."
-        )
+        # No API key - return empty results gracefully instead of error
+        return []
     
     results = search_live_players(query)
     return results
@@ -115,6 +113,55 @@ def get_player_details(player_id: int):
     player = PLAYERS_DB.get(player_id)
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
+    
+    # Auto-fetch real stats if api_football_id is present but season stats are default/baseline
+    latest_season = player.get("seasons", {}).get("2025-26", {})
+    if (
+        player.get("api_football_id")
+        and latest_season.get("league") in ["World Cup 2026", "World Cup", "Unknown"]
+        and is_api_configured()
+    ):
+        api_football_id = player["api_football_id"]
+        seasons_data = {}
+        
+        for year in [2025, 2024, 2023]:
+            raw_data = fetch_player_season_stats(api_football_id, year)
+            if raw_data:
+                seasons_data[year] = raw_data
+                
+        if seasons_data:
+            player_basic = {
+                "name": player["name"],
+                "nationality": player["nationality"],
+                "age": latest_season.get("age", 25),
+                "photo": player.get("image_url") or "/avatars/default.png",
+                "position": player["position"],
+                "team": player["team"],
+                "league": "Unknown"
+            }
+            # Map stats
+            new_player_data = map_stats_to_schema(seasons_data, player_basic)
+            new_player_data["id"] = player_id
+            new_player_data["api_football_id"] = api_football_id
+            
+            # Preserve existing Transfermarkt and metadata fields
+            for field in ["market_value", "height", "foot", "contract_until", "image_url"]:
+                if field in player:
+                    new_player_data[field] = player[field]
+            
+            # Update database
+            PLAYERS_DB[player_id] = new_player_data
+            player = new_player_data
+            
+            # Persist to file
+            players_filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "players.py"))
+            try:
+                with open(players_filepath, "w", encoding="utf-8") as f:
+                    f.write("# Real-Data updated database (Expanded with Live Imports)\n")
+                    f.write("PLAYERS_DB = " + json.dumps(PLAYERS_DB, indent=4, ensure_ascii=False) + "\n")
+                    f.write("\n# Convert keys to integers to avoid string lookup errors from json-dumped keys\nPLAYERS_DB = {int(k): v for k, v in PLAYERS_DB.items()}\n")
+            except Exception as e:
+                print(f"[-] Error writing imported player to players.py: {e}")
     
     # Return both raw and normalized stats
     normalized = normalize_player_stats(player)
