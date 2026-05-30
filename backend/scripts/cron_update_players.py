@@ -35,9 +35,8 @@ def main():
     target_players = []
     for pid, p in PLAYERS_DB.items():
         latest_season = p.get("seasons", {}).get(TARGET_SEASON_CODE, {})
-        if (
-            p.get("api_football_id") 
-            and latest_season.get("league") in ["World Cup 2026", "World Cup", "Unknown"]
+        if p.get("api_football_id") and (
+            not latest_season or latest_season.get("league") in ["World Cup 2026", "World Cup", "Unknown", None]
         ):
             target_players.append(pid)
 
